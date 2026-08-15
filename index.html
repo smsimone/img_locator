@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="it">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Img Locator</title>
+    <link rel="stylesheet" href="./style.css" />
+  </head>
+  <body>
+    <main class="app">
+      <h1>Img Locator</h1>
+      <p>Carica una foto di riferimento e poi un pezzo target per trovare la posizione probabile.</p>
+
+      <section class="controls">
+        <label>
+          Immagine reference
+          <input id="referenceInput" type="file" accept="image/*" />
+        </label>
+        <label>
+          Oppure URL reference
+          <div class="url-row">
+            <input id="referenceUrlInput" type="url" placeholder="https://..." />
+            <button id="loadReferenceUrlButton" type="button">Carica URL</button>
+          </div>
+        </label>
+
+        <label>
+          Immagine target
+          <input id="targetInput" type="file" accept="image/*" disabled />
+        </label>
+      </section>
+
+      <section class="output">
+        <div>
+          <h2>Reference</h2>
+          <canvas id="referenceCanvas"></canvas>
+        </div>
+        <div>
+          <h2>Target</h2>
+          <canvas id="targetCanvas"></canvas>
+        </div>
+      </section>
+
+      <p id="status" class="status">Carica una reference per iniziare.</p>
+    </main>
+
+    <script
+      src="https://code.jquery.com/jquery-3.7.1.min.js"
+      integrity="sha256-/JqT3SQfawRcv/BIHPThkBvs0OEvtFFmqPF/lYI/Cxo="
+      crossorigin="anonymous"
+    ></script>
+    <script src="./app.js"></script>
+  </body>
+</html>
