@@ -29,6 +29,16 @@ label {
   font-weight: 600;
 }
 
+.url-row {
+  display: flex;
+  gap: 8px;
+}
+
+.url-row input {
+  flex: 1;
+  min-width: 0;
+}
+
 .output {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));

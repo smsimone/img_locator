@@ -3,6 +3,8 @@
   const MAX_TARGET_SIDE = 120;
 
   const $referenceInput = $('#referenceInput');
+  const $referenceUrlInput = $('#referenceUrlInput');
+  const $loadReferenceUrlButton = $('#loadReferenceUrlButton');
   const $targetInput = $('#targetInput');
   const $status = $('#status');
 
@@ -34,6 +36,24 @@
         reject(new Error('Immagine non valida.'));
       };
       image.src = url;
+    });
+  }
+
+  function readImageFromUrl(rawUrl) {
+    return new Promise((resolve, reject) => {
+      let parsedUrl;
+      try {
+        parsedUrl = new URL(rawUrl);
+      } catch {
+        reject(new Error('URL non valida.'));
+        return;
+      }
+
+      const image = new Image();
+      image.crossOrigin = 'anonymous';
+      image.onload = () => resolve(image);
+      image.onerror = () => reject(new Error('Impossibile caricare l\'immagine da URL.'));
+      image.src = parsedUrl.toString();
     });
   }
 
@@ -117,6 +137,25 @@
     refCtx.stroke();
   }
 
+  function applyReference(image) {
+    const displaySize = fitSize(image.width, image.height, 900);
+
+    state.referenceImage = image;
+    state.refDisplayScale = displaySize.width / image.width;
+    state.refWork = imageToWorkData(image, MAX_REFERENCE_SIDE);
+
+    referenceCanvas.width = displaySize.width;
+    referenceCanvas.height = displaySize.height;
+    refCtx.drawImage(image, 0, 0, displaySize.width, displaySize.height);
+
+    targetCanvas.width = 1;
+    targetCanvas.height = 1;
+    targetCtx.clearRect(0, 0, 1, 1);
+
+    $targetInput.prop('disabled', false).val('');
+    setStatus('Reference caricata. Ora scegli un target.');
+  }
+
   async function handleReferenceChange(event) {
     const file = event.target.files?.[0];
     if (!file) {
@@ -125,24 +164,25 @@
 
     try {
       const image = await readImage(file);
-      const displaySize = fitSize(image.width, image.height, 900);
-
-      state.referenceImage = image;
-      state.refDisplayScale = displaySize.width / image.width;
-      state.refWork = imageToWorkData(image, MAX_REFERENCE_SIDE);
-
-      referenceCanvas.width = displaySize.width;
-      referenceCanvas.height = displaySize.height;
-      refCtx.drawImage(image, 0, 0, displaySize.width, displaySize.height);
-
-      targetCanvas.width = 1;
-      targetCanvas.height = 1;
-      targetCtx.clearRect(0, 0, 1, 1);
-
-      $targetInput.prop('disabled', false).val('');
-      setStatus('Reference caricata. Ora scegli un target.');
+      applyReference(image);
     } catch {
       setStatus('Errore nel caricamento della reference.');
+    }
+  }
+
+  async function handleReferenceUrlLoad() {
+    const url = $referenceUrlInput.val()?.toString().trim();
+    if (!url) {
+      setStatus('Inserisci un URL prima di caricare la reference.');
+      return;
+    }
+
+    setStatus('Caricamento reference da URL...');
+    try {
+      const image = await readImageFromUrl(url);
+      applyReference(image);
+    } catch {
+      setStatus('Errore nel caricamento via URL (verifica che il server permetta CORS).');
     }
   }
 
@@ -178,5 +218,12 @@
   }
 
   $referenceInput.on('change', handleReferenceChange);
+  $loadReferenceUrlButton.on('click', handleReferenceUrlLoad);
+  $referenceUrlInput.on('keydown', (event) => {
+    if (event.key === 'Enter') {
+      event.preventDefault();
+      handleReferenceUrlLoad();
+    }
+  });
   $targetInput.on('change', handleTargetChange);
 })();
