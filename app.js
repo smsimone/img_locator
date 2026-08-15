@@ -83,6 +83,128 @@
     return { width: size.width, height: size.height, gray };
   }
 
+  function extractTargetSubject(image) {
+    const sourceCanvas = document.createElement('canvas');
+    sourceCanvas.width = image.width;
+    sourceCanvas.height = image.height;
+    const sourceCtx = sourceCanvas.getContext('2d', { willReadFrequently: true });
+    sourceCtx.drawImage(image, 0, 0);
+
+    const imageData = sourceCtx.getImageData(0, 0, image.width, image.height).data;
+    const borderStats = {
+      count: 0,
+      r: 0,
+      g: 0,
+      b: 0,
+      r2: 0,
+      g2: 0,
+      b2: 0,
+    };
+
+    function collectBorderPixel(x, y) {
+      const i = (y * image.width + x) * 4;
+      const alpha = imageData[i + 3];
+      if (alpha < 16) {
+        return;
+      }
+      const r = imageData[i];
+      const g = imageData[i + 1];
+      const b = imageData[i + 2];
+      borderStats.count++;
+      borderStats.r += r;
+      borderStats.g += g;
+      borderStats.b += b;
+      borderStats.r2 += r * r;
+      borderStats.g2 += g * g;
+      borderStats.b2 += b * b;
+    }
+
+    for (let x = 0; x < image.width; x++) {
+      collectBorderPixel(x, 0);
+      collectBorderPixel(x, image.height - 1);
+    }
+    for (let y = 1; y < image.height - 1; y++) {
+      collectBorderPixel(0, y);
+      collectBorderPixel(image.width - 1, y);
+    }
+
+    if (!borderStats.count) {
+      return { source: image, extracted: false };
+    }
+
+    const meanR = borderStats.r / borderStats.count;
+    const meanG = borderStats.g / borderStats.count;
+    const meanB = borderStats.b / borderStats.count;
+    const varR = Math.max(0, borderStats.r2 / borderStats.count - meanR * meanR);
+    const varG = Math.max(0, borderStats.g2 / borderStats.count - meanG * meanG);
+    const varB = Math.max(0, borderStats.b2 / borderStats.count - meanB * meanB);
+    const bgDeviation = Math.sqrt(varR + varG + varB);
+    const colorThreshold = Math.max(35, bgDeviation * 2.2);
+
+    let minX = image.width;
+    let minY = image.height;
+    let maxX = -1;
+    let maxY = -1;
+    let subjectPixels = 0;
+
+    for (let y = 0; y < image.height; y++) {
+      for (let x = 0; x < image.width; x++) {
+        const i = (y * image.width + x) * 4;
+        const alpha = imageData[i + 3];
+        if (alpha < 16) {
+          continue;
+        }
+
+        let isSubject = alpha < 245;
+        if (!isSubject) {
+          const dr = imageData[i] - meanR;
+          const dg = imageData[i + 1] - meanG;
+          const db = imageData[i + 2] - meanB;
+          const distance = Math.sqrt(dr * dr + dg * dg + db * db);
+          isSubject = distance > colorThreshold;
+        }
+
+        if (!isSubject) {
+          continue;
+        }
+
+        subjectPixels++;
+        if (x < minX) minX = x;
+        if (y < minY) minY = y;
+        if (x > maxX) maxX = x;
+        if (y > maxY) maxY = y;
+      }
+    }
+
+    if (subjectPixels < 24 || maxX < minX || maxY < minY) {
+      return { source: image, extracted: false };
+    }
+
+    const coverage = subjectPixels / (image.width * image.height);
+    if (coverage > 0.95) {
+      return { source: image, extracted: false };
+    }
+
+    const padX = Math.max(2, Math.round((maxX - minX + 1) * 0.06));
+    const padY = Math.max(2, Math.round((maxY - minY + 1) * 0.06));
+    const cropX = Math.max(0, minX - padX);
+    const cropY = Math.max(0, minY - padY);
+    const cropW = Math.min(image.width - cropX, maxX - minX + 1 + padX * 2);
+    const cropH = Math.min(image.height - cropY, maxY - minY + 1 + padY * 2);
+
+    if (cropW >= image.width * 0.98 && cropH >= image.height * 0.98) {
+      return { source: image, extracted: false };
+    }
+
+    const croppedCanvas = document.createElement('canvas');
+    croppedCanvas.width = cropW;
+    croppedCanvas.height = cropH;
+    const croppedCtx = croppedCanvas.getContext('2d');
+    croppedCtx.drawImage(image, cropX, cropY, cropW, cropH, 0, 0, cropW, cropH);
+
+    return { source: croppedCanvas, extracted: true };
+  }
+
   function findBestMatch(reference, target) {
     if (target.width > reference.width || target.height > reference.height) {
       return null;
@@ -196,12 +318,14 @@
 
     try {
       const image = await readImage(file);
-      const targetWork = imageToWorkData(image, MAX_TARGET_SIDE);
-      const previewSize = fitSize(image.width, image.height, 240);
+      const extractedTarget = extractTargetSubject(image);
+      const targetSource = extractedTarget.source;
+      const targetWork = imageToWorkData(targetSource, MAX_TARGET_SIDE);
+      const previewSize = fitSize(targetSource.width, targetSource.height, 240);
 
       targetCanvas.width = previewSize.width;
       targetCanvas.height = previewSize.height;
-      targetCtx.drawImage(image, 0, 0, previewSize.width, previewSize.height);
+      targetCtx.drawImage(targetSource, 0, 0, previewSize.width, previewSize.height);
 
       const match = findBestMatch(state.refWork, targetWork);
 
@@ -211,7 +335,8 @@
       }
 
       drawReferenceWithCircle(match, targetWork);
-      setStatus(`Posizione trovata (score medio: ${match.score.toFixed(2)}).`);
+      const extractionPrefix = extractedTarget.extracted ? 'Soggetto estratto. ' : '';
+      setStatus(`${extractionPrefix}Posizione trovata (score medio: ${match.score.toFixed(2)}).`);
     } catch {
       setStatus('Errore nel caricamento del target.');
     }
